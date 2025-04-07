@@ -11,15 +11,24 @@ pub mod ciphey {
     use regex::Regex;
     use std::collections::{HashMap, HashSet};
     use std::fs::OpenOptions;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
     use std::{fs, io};
 
     use std::io::{stdin, Read, Write};
-
-    const MAX_GOODNESS_LEVEL: u8 = 2;
-    const MAX_BAD_WORDS_RATE: f64 = 0.06;
+    static MAX_BAD_WORDS_RATE_PERCENT: AtomicUsize = AtomicUsize::new(6);
+    static MAX_GOODNESS_LEVEL: AtomicUsize = AtomicUsize::new(4);
+    // const MAX_GOODNESS_LEVEL: u8 = 4;
+    // const MAX_BAD_WORDS_RATE: f64 = 0.1;
     const ASCII_LOWERCASE: &str = "abcdefghijklmnopqrstuvwxyz";
     const MAX_WORD_LENGTH_TO_CACHE: usize = 8;
+
+    pub fn set_max_bad_words_rate(rate: usize) {
+        MAX_BAD_WORDS_RATE_PERCENT.store(rate, Ordering::Relaxed);
+    }
+    pub fn set_max_goodness_level(level: usize) {
+        MAX_GOODNESS_LEVEL.store(level, Ordering::Relaxed);
+    }
 
     // Cache for regex patterns
     lazy_static! {
@@ -177,7 +186,7 @@ pub mod ciphey {
         pub fn new() -> WordList {
             let mut words = HashMap::new();
 
-            for goodness in 0..MAX_GOODNESS_LEVEL {
+            for goodness in 0..MAX_GOODNESS_LEVEL.load(Ordering::Relaxed) {
                 let path = format!("{}.txt", goodness);
                 // let content = fs::read_to_string(&path)
                 //     .unwrap_or_else(|_| panic!("Could not read file: {}", path));
@@ -255,7 +264,9 @@ pub mod ciphey {
 
     impl<'a> KeyFinder<'a> {
         pub fn new(enc_words: Vec<String>, dict_wordlist: &'a WordList) -> Self {
-            let points_threshold = (enc_words.len() as f64 * MAX_BAD_WORDS_RATE) as usize;
+            let points_threshold = (enc_words.len() as f64
+                * MAX_BAD_WORDS_RATE_PERCENT.load(Ordering::Relaxed) as f64
+                / 100.0) as usize;
             let mut different_chars = HashMap::new();
 
             for word in &enc_words {
